@@ -1,45 +1,499 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="disco-space">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Disco Ball — live demo</title>
+  <title>Let’s party — Lucy Bichakhchyan</title>
+  <meta name="description" content="A side project by Lucy Bichakhchyan: a 3D mirror ball that hangs over the page and throws light across the words.">
+  <meta name="theme-color" content="#170D24">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Let’s party — Lucy Bichakhchyan">
+  <meta property="og:description" content="A side project by Lucy Bichakhchyan: a 3D mirror ball that hangs over the page and throws light across the words.">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%23170D24'/%3E%3Ccircle cx='8' cy='8' r='5' fill='%23AB8CF0'/%3E%3Cpath d='M3 8h10M8 3v10' stroke='%23170D24' stroke-width='1'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: dark; }
-    html, body { margin: 0; min-height: 100%; }
+    /* Lucy Bichakhchyan design system */
+    :root {
+      color-scheme: dark;
+      --color-bg: #170D24;                             /* deep party purple */
+      --text: #F6F6F4;
+      --muted: #BDB3CC;                                /* purple-tinted grey, 9:1 on the background */
+      --line: rgba(246, 246, 244, 0.28);
+      --accent: #8A2BE2;
+      --focus: #AB8CF0;
+      --shine: #CDB8FF;
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);      /* long, soft landing */
+      --reveal: 1100ms;                                /* each letter's entrance */
+      --stagger: 55ms;                                 /* gap between letters */
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
     body {
-      background: radial-gradient(1200px 800px at 70% -10%, #15151f, #0a0a12 60%);
-      color: #e8e8f0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      line-height: 1.6;
+      background: var(--color-bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      display: grid;
+      place-items: center;
+      min-height: 100dvh;
+      padding: 72px 16px;
+      transition: padding-top 700ms var(--ease-out);
+      overflow: hidden;
     }
-    main { max-width: 640px; margin: 0 auto; padding: 12vh 24px 40vh; }
-    h1 { font-size: clamp(2rem, 6vw, 3.4rem); margin: 0 0 .4em; letter-spacing: -0.02em; }
-    p { color: #b9b9c8; }
-    a.btn {
-      display: inline-block; margin: 8px 10px 0 0; padding: 10px 18px;
-      border: 1px solid #34344a; border-radius: 999px; color: #e8e8f0;
-      text-decoration: none; transition: border-color .2s, background .2s;
+    /* the words sit a little low, leaving room for the ball to hang above them;
+       if the ball can't load, the space is given back and the words centre */
+    html.disco-space body { padding-top: clamp(96px, 26vh, 260px); }
+    ::selection { background: var(--accent); color: #fff; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+
+    /* ---------- The words ---------- */
+    .party { position: relative; }
+    h1 {
+      margin: 0;
+      font-family: 'Playfair Display', Georgia, serif;
+      font-weight: 700;
+      font-size: clamp(3.3rem, min(17vw, 32vh), 14rem);
+      line-height: 1;
+      letter-spacing: -0.01em;
+      text-align: center;
+      white-space: nowrap;
+      /* one quiet, steady glow; the light from the ball does the rest */
+      filter: drop-shadow(0 0 18px rgba(171, 140, 240, 0.22));
     }
-    a.btn:hover { border-color: #8aa0ff; background: #15151f; }
-    .hint { font-size: .9rem; color: #7a7a8c; margin-top: 2.5em; }
-    code { background: #1a1a26; padding: 2px 6px; border-radius: 6px; }
+    h1 em { font-style: italic; }
+    .word { display: inline-block; }
+    .gap { display: inline-block; width: 0.28em; }
+    .l {
+      position: relative;
+      display: inline-block;
+      animation: rise var(--reveal) var(--ease-out) both;
+      animation-delay: calc(var(--i) * var(--stagger));
+    }
+    /* letters wait until the typeface has loaded, so it never swaps mid-entrance */
+    .party:not(.ready) .l { animation-play-state: paused; }
+    @keyframes rise {
+      0%   { opacity: 0; transform: translateY(0.35em); filter: blur(10px); }
+      100% { opacity: 1; transform: none; filter: blur(0); }
+    }
+
+    /* When the ball's light lands on a letter, the letter catches it:
+       it flashes a touch brighter and a soft bloom opens behind it
+       (a white core, with the violet only in the halo). */
+    .l::before,
+    .l::after {
+      content: attr(data-ch);
+      position: absolute; inset: 0;
+      pointer-events: none;
+      opacity: 0;
+    }
+    .l::before {
+      color: transparent;
+      text-shadow: 0 0 0.06em rgba(255, 255, 255, 0.9), 0 0 0.32em var(--glow, rgba(171, 140, 240, 0.55));
+      z-index: -1;
+    }
+    .l::after {
+      color: #FFFFFF;
+      text-shadow: 0 0 0.02em #FFFFFF;
+    }
+    .l.glint::before { animation: flare 1100ms var(--ease-out); }
+    .l.glint::after  { animation: flash 700ms var(--ease-out); }
+    @keyframes flare {
+      0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; }
+    }
+    @keyframes flash {
+      0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; }
+    }
+
+    /* ---------- Sparkles: one or two pop beside a letter as it catches the light ---------- */
+    .sp {
+      position: absolute;
+      width: var(--s, 20px); height: var(--s, 20px);
+      margin: calc(var(--s, 20px) / -2) 0 0 calc(var(--s, 20px) / -2);
+      background: var(--c, #F6F6F4);
+      clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+      pointer-events: none;
+      opacity: 0;
+      animation: twinkle 1100ms var(--ease-out) var(--delay, 0ms) 1 both;
+    }
+    @keyframes twinkle {
+      0%   { opacity: 0; transform: scale(0) rotate(0deg); }
+      35%  { opacity: 1; transform: scale(1) rotate(45deg); }
+      100% { opacity: 0; transform: scale(0.4) rotate(90deg); }
+    }
+
+    /* ---------- Footer: music and credit ---------- */
+    .foot {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 16px;
+      z-index: 10000;                                  /* above the light spots */
+      font-size: 13px;
+    }
+    .music, .credit {
+      display: inline-flex; align-items: center; gap: 10px;
+      min-height: 44px;
+      color: var(--muted);
+      font: inherit; font-weight: 500;
+      transition: color 160ms var(--ease-out), border-color 160ms var(--ease-out), background-color 160ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+    .music {
+      padding: 0 16px 0 14px;
+      background: transparent;
+      border: 1px solid #7A7088;                     /* 3.9:1 on the background */
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    .music:hover { color: var(--text); border-color: var(--focus); }
+    .music:active { transform: scale(0.97); }
+    .music[data-state="on"] { color: var(--text); border-color: var(--focus); background: rgba(171, 140, 240, 0.1); }
+    /* three equaliser bars: still when off, dancing on the beat when on */
+    .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+    .eq i { display: block; width: 2px; height: 100%; background: currentColor; border-radius: 1px; transform-origin: 50% 100%; }
+    .eq i:nth-child(1) { transform: scaleY(0.45); }
+    .eq i:nth-child(2) { transform: scaleY(0.9); }
+    .eq i:nth-child(3) { transform: scaleY(0.6); }
+    .music[data-state="on"] .eq i { animation: eq 500ms ease-in-out infinite alternate; }
+    .music[data-state="on"] .eq i:nth-child(2) { animation-delay: -250ms; }
+    .music[data-state="on"] .eq i:nth-child(3) { animation-delay: -125ms; }
+    @keyframes eq { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+
+    .credit {
+      text-decoration: underline;
+      text-decoration-color: transparent;
+      text-underline-offset: 4px;
+    }
+    .credit:hover, .credit:focus-visible { color: var(--text); text-decoration-color: var(--focus); }
+    .k-short { display: none; }
+
+    /* ---------- Party mode (music on): the room pulses on the beat ---------- */
+    .room-wrap {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 800ms var(--ease-out);
+    }
+    html.is-partying .room-wrap { opacity: 1; }
+    .room {
+      position: absolute; inset: 0;
+      background: var(--room, #6B2BD9);
+      opacity: calc(0.05 + var(--pulse, 0) * 0.13);
+      transition: background-color 600ms var(--ease-out);
+    }
+    .party { position: relative; z-index: 1; }
+
+    /* ---------- Tall screens (phones held upright): two lines, much bigger ---------- */
+    @media (max-aspect-ratio: 17/20) {
+      h1 { white-space: normal; font-size: clamp(3.3rem, 27vw, 14rem); line-height: 0.98; }
+      .gap { display: block; height: 0; }
+    }
+    @media (max-width: 400px) {
+      .k-long { display: none; }
+      .k-short { display: inline; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .l { animation: none; }
+      .l.glint::before, .l.glint::after { animation: none; }
+      .sp { display: none; }
+      .music[data-state="on"] .eq i { animation: none; }
+    }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Disco ball live demo</h1>
-    <p>The mirror ball is roaming this page. Hover it to make it spin faster, and
-       notice it bounces off its own edge — not an invisible box.</p>
-    <p>These buttons prove the ball is <strong>click-through</strong>: even when it
-       drifts right over them, they still work.</p>
-    <a class="btn" href="#one" onclick="alert('Button 1 still clickable ✔')">Test button 1</a>
-    <a class="btn" href="#two" onclick="alert('Button 2 still clickable ✔')">Test button 2</a>
-    <p class="hint">Embed it anywhere with one line:<br>
-       <code>&lt;script type="module" src="disco-ball.js"&gt;&lt;/script&gt;</code></p>
+  <div class="room-wrap" aria-hidden="true"><div class="room" id="room"></div></div>
+
+  <main class="party" id="party">
+    <h1 aria-label="Let’s party!" data-disco-target>
+      <span class="word" aria-hidden="true"><em><span class="l" style="--i:0" data-ch="L">L</span><span class="l" style="--i:1" data-ch="e">e</span><span class="l" style="--i:2" data-ch="t">t</span><span class="l" style="--i:3" data-ch="’">’</span><span class="l" style="--i:4" data-ch="s">s</span></em></span><span class="gap" aria-hidden="true"></span><span class="word" aria-hidden="true"><span class="l" style="--i:5" data-ch="p">p</span><span class="l" style="--i:6" data-ch="a">a</span><span class="l" style="--i:7" data-ch="r">r</span><span class="l" style="--i:8" data-ch="t">t</span><span class="l" style="--i:9" data-ch="y">y</span><span class="l" style="--i:10" data-ch="!">!</span></span>
+    </h1>
   </main>
 
-  <!-- The whole effect, one line. The module injects its own styles + element. -->
+  <footer class="foot">
+    <button class="music" id="music" type="button" data-state="off">
+      <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span id="musicLabel">Play music</span>
+    </button>
+    <a class="credit" href="https://bichakhchyan.com/" target="_top"><span class="k-long">Built by Lucy Bichakhchyan</span><span class="k-short">By Lucy Bichakhchyan</span></a>
+  </footer>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var party = document.getElementById('party');
+      var letters = Array.prototype.slice.call(document.querySelectorAll('.l'));
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+      var REVEAL = 1100, STAGGER = 55;
+
+      // ---------- Start the entrance once the typeface is ready (1.2 s at most) ----------
+      var fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+      Promise.race([fontsReady, new Promise(function (r) { setTimeout(r, 1200); })]).then(function () {
+        party.classList.add('ready');
+        // cue the disco ball to drop in as the last letter settles
+        setTimeout(function () {
+          window.__discoCue = true;
+          window.dispatchEvent(new Event('disco:cue'));
+        }, reduce.matches ? 0 : REVEAL * 0.55 + STAGGER * letters.length);
+      });
+
+      // ---------- Letters catch the ball's light ----------
+      var rects = [];
+      function measure() {
+        rects = letters.map(function (l) {
+          var r = l.getBoundingClientRect();
+          var padX = r.width * 0.25, padY = r.height * 0.3;   // the glyph, not its line box
+          return { l: r.left + padX, r: r.right - padX, t: r.top + padY, b: r.bottom - padY };
+        });
+      }
+      window.addEventListener('resize', measure);
+      letters[letters.length - 1].addEventListener('animationend', measure);
+      fontsReady.then(measure);
+      // Glints are scheduled, so every visitor sees the idea: the first comes about a second
+      // after the ball's light comes on, then one every 3-5 s (every 7-9 s while the page is calm).
+      // Each time, the letter closest to where the ball's bright light is falling catches it.
+      var lightPts = null, lastLetter = -1, glintTimer = 0, started = false, partyOn = false;
+      window.addEventListener('disco:light', function (e) {
+        lightPts = e.detail.slice();
+        if (!started) { started = true; glintTimer = setTimeout(glintTick, 1000); }
+      });
+      function nearestLetter() {
+        var best = -1, bestD = Infinity;
+        for (var i = 0; i < letters.length; i++) {
+          if (i === lastLetter) continue;
+          var b = rects[i], cx = (b.l + b.r) / 2, cy = (b.t + b.b) / 2;
+          for (var p = 0; lightPts && p < lightPts.length; p += 2) {
+            var dx = lightPts[p] - cx, dy = lightPts[p + 1] - cy, d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = i; }
+          }
+        }
+        if (best < 0) {                                    // no light nearby this moment: any other letter
+          best = Math.floor(Math.random() * (letters.length - 1));
+          if (best >= lastLetter) best++;
+        }
+        return best;
+      }
+      function glintTick() {
+        var calm = root.hasAttribute('data-calm');
+        if (!partyOn && !reduce.matches && !document.hidden && rects.length) {
+          var i = nearestLetter();
+          var el = letters[i];
+          el.style.removeProperty('--glow');
+          el.classList.remove('glint'); void el.offsetWidth; el.classList.add('glint');
+          lastLetter = i;
+          sparkleBeside(el);
+        }
+        glintTimer = setTimeout(glintTick, calm ? 7000 + Math.random() * 2000 : 3000 + Math.random() * 2000);
+      }
+      letters.forEach(function (l) {
+        l.addEventListener('animationend', function (e) { if (e.animationName === 'flare') l.classList.remove('glint'); });
+      });
+
+      // One or two sparkles pop beside the letter that caught the light, then go.
+      function sparkleBeside(el) {
+        var pr = party.getBoundingClientRect(), r = el.getBoundingClientRect();
+        var fs = parseFloat(getComputedStyle(party.querySelector('h1')).fontSize);
+        var n = Math.random() < 0.5 ? 1 : 2;
+        for (var k = 0; k < n; k++) {
+          var sp = document.createElement('span');
+          sp.className = 'sp';
+          sp.setAttribute('aria-hidden', 'true');
+          var side = (k === 0) === (Math.random() < 0.5) ? -1 : 1;
+          var x = (side < 0 ? r.left - r.width * 0.15 : r.right + r.width * 0.15) - pr.left;
+          var y = r.top + r.height * (0.15 + Math.random() * 0.25) - pr.top;
+          sp.style.left = x + 'px';
+          sp.style.top = y + 'px';
+          sp.style.setProperty('--s', Math.round(fs * (0.1 + Math.random() * 0.06)) + 'px');
+          sp.style.setProperty('--c', k === 0 ? '#FFFFFF' : '#CDB8FF');
+          sp.style.setProperty('--delay', (120 + k * 180) + 'ms');
+          sp.addEventListener('animationend', function (e) { e.target.remove(); });
+          party.appendChild(sp);
+        }
+      }
+
+      // ---------- The music: an original disco groove, played live in the browser ----------
+      // 120 beats a minute, four on the floor: kick on every beat, claps on 2 and 4, open hats on
+      // the off-beats, an octave-jumping bass and short chord stabs over a four-bar loop
+      // (Am7, D9, Fmaj7, E7). Nothing is downloaded: every sound is made with the Web Audio API.
+      var Groove = (function () {
+        var BPM = 120, STEP = 60 / BPM / 4;            // a sixteenth note
+        var ac, master, noiseBuf, timer = 0, nextTime = 0, step = 0, startAt = 0, token = 0;
+        var BARS = [
+          { root: 55.00, stab: [220.00, 261.63, 329.63, 392.00] },   // Am7
+          { root: 73.42, stab: [185.00, 220.00, 261.63, 329.63] },   // D9
+          { root: 87.31, stab: [174.61, 220.00, 261.63, 329.63] },   // Fmaj7
+          { root: 82.41, stab: [207.65, 246.94, 293.66, 329.63] },   // E7
+        ];
+        function init() {
+          ac = new (window.AudioContext || window.webkitAudioContext)();
+          var comp = ac.createDynamicsCompressor();
+          comp.threshold.value = -16; comp.ratio.value = 3.5;
+          master = ac.createGain(); master.gain.value = 0;
+          master.connect(comp); comp.connect(ac.destination);
+          noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+          var d = noiseBuf.getChannelData(0);
+          for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        }
+        function env(g, t, peak, attack, release) {
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(peak, t + attack);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + attack + release);
+        }
+        function kick(t) {
+          var o = ac.createOscillator(), g = ac.createGain();
+          o.frequency.setValueAtTime(150, t);
+          o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+          env(g, t, 0.95, 0.004, 0.32);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.4);
+        }
+        function noise(t, dur, type, freq, q, vol) {
+          var src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+          src.buffer = noiseBuf; f.type = type; f.frequency.value = freq; f.Q.value = q;
+          env(g, t, vol, 0.002, dur);
+          src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + dur + 0.05);
+        }
+        function clap(t) { [0, 0.011, 0.022].forEach(function (o) { noise(t + o, 0.14, 'bandpass', 1500, 0.9, 0.3); }); }
+        function hat(t, open) { noise(t, open ? 0.15 : 0.035, 'highpass', 8000, 0.7, open ? 0.16 : 0.08); }
+        function bass(t, f) {
+          var o = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
+          o.type = 'sawtooth'; o.frequency.value = f;
+          lp.type = 'lowpass'; lp.Q.value = 7;
+          lp.frequency.setValueAtTime(1100, t); lp.frequency.exponentialRampToValueAtTime(240, t + 0.16);
+          env(g, t, 0.3, 0.008, 0.17);
+          o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t + 0.25);
+        }
+        function stab(t, notes) {
+          notes.forEach(function (f) {
+            var o = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
+            o.type = 'square'; o.frequency.value = f; o.detune.value = (Math.random() - 0.5) * 8;
+            lp.type = 'lowpass'; lp.frequency.value = 2400;
+            env(g, t, 0.035, 0.006, 0.2);
+            o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t + 0.3);
+          });
+        }
+        function pad(t, notes) {                        // soft strings under each bar
+          notes.forEach(function (f) {
+            [-6, 6].forEach(function (cents) {
+              var o = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
+              o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = cents;
+              lp.type = 'lowpass'; lp.frequency.value = 1400;
+              g.gain.setValueAtTime(0.0001, t);
+              g.gain.linearRampToValueAtTime(0.012, t + 0.35);
+              g.gain.linearRampToValueAtTime(0.0001, t + 1.95);
+              o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t + 2);
+            });
+          });
+        }
+        function play(s, t) {
+          var bar = BARS[Math.floor(s / 16) % 4], i = s % 16;
+          if (i % 4 === 0) kick(t);
+          if (i === 4 || i === 12) clap(t);
+          if (i % 4 === 2) hat(t, true); else if (i % 2 === 1) hat(t, false);
+          if (i % 2 === 0) bass(t, i % 4 === 0 ? bar.root : bar.root * 2);
+          if (i === 15) bass(t, bar.root * 2);
+          if (i === 6 || i === 11) stab(t, bar.stab);
+          if (i === 0) pad(t, bar.stab);
+        }
+        function schedule() {
+          var ahead = document.hidden ? 1.5 : 0.15;       // background tabs tick slowly: plan further ahead
+          while (nextTime < ac.currentTime + ahead) {
+            play(step, nextTime);
+            nextTime += STEP;
+            step = (step + 1) % 64;
+          }
+        }
+        return {
+          start: function () {
+            if (!ac) init();
+            token++;
+            ac.resume();
+            step = 0;
+            nextTime = startAt = ac.currentTime + 0.08;
+            master.gain.cancelScheduledValues(ac.currentTime);
+            master.gain.setValueAtTime(0.0001, ac.currentTime);
+            master.gain.exponentialRampToValueAtTime(0.75, ac.currentTime + 0.3);
+            clearInterval(timer);
+            schedule();
+            timer = setInterval(schedule, 25);
+          },
+          stop: function () {
+            if (!ac) return;
+            var my = ++token;
+            master.gain.cancelScheduledValues(ac.currentTime);
+            master.gain.setValueAtTime(master.gain.value, ac.currentTime);
+            master.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.35);
+            setTimeout(function () { if (my === token) { clearInterval(timer); ac.suspend(); } }, 400);
+          },
+          // the beat you hear right now (the sound reaches the speakers a little after it is scheduled)
+          beat: function () {
+            if (!ac) return 0;
+            var lag = ac.outputLatency || ac.baseLatency || 0;
+            return Math.max(0, ac.currentTime - lag - startAt) * BPM / 60;
+          },
+        };
+      })();
+
+      // ---------- Party mode: music on, lights in colour, the room pulses, letters catch colour on every bar ----------
+      var musicBtn = document.getElementById('music');
+      var musicLabel = document.getElementById('musicLabel');
+      var room = document.getElementById('room');
+      var ROOM = ['#6B2BD9', '#A01F78', '#2E2FB0', '#8A2BE2'];
+      var GLOWS = ['rgba(255,46,154,0.75)', 'rgba(164,91,255,0.75)', 'rgba(91,91,255,0.75)', 'rgba(46,230,255,0.7)', 'rgba(255,233,214,0.7)'];
+      var partyRaf = 0, lastBar = -1;
+      function partyFrame() {
+        var beat = Groove.beat();
+        var pulse = reduce.matches ? 0.4 : Math.exp(-(beat % 4) * 1.8);   // the room swells at the start of each bar
+        root.style.setProperty('--pulse', pulse.toFixed(3));
+        var bar = Math.floor(beat / 4);
+        if (bar !== lastBar) {                             // a new bar: new room colour and a letter catches it
+          lastBar = bar;
+          room.style.setProperty('--room', ROOM[bar % ROOM.length]);
+          if (!reduce.matches && rects.length) {
+            var i = nearestLetter();
+            var el = letters[i];
+            el.style.setProperty('--glow', GLOWS[bar % GLOWS.length]);
+            el.classList.remove('glint'); void el.offsetWidth; el.classList.add('glint');
+            lastLetter = i;
+            sparkleBeside(el);
+          }
+        }
+        partyRaf = requestAnimationFrame(partyFrame);
+      }
+      function setParty(on) {
+        partyOn = on;
+        musicBtn.setAttribute('data-state', on ? 'on' : 'off');
+        musicLabel.textContent = on ? 'Stop music' : 'Play music';
+        root.classList.toggle('is-partying', on);
+        if (on) {
+          Groove.start();
+          lastBar = -1;
+          cancelAnimationFrame(partyRaf);
+          partyRaf = requestAnimationFrame(partyFrame);
+        } else {
+          Groove.stop();
+          cancelAnimationFrame(partyRaf);
+          root.style.removeProperty('--pulse');
+        }
+        window.dispatchEvent(new CustomEvent('disco:party', { detail: { on: on, getBeat: Groove.beat } }));
+      }
+      musicBtn.addEventListener('click', function () { setParty(!partyOn); });
+
+      // ---------- Calm: the ball tells the page when no one has moved for a while ----------
+      window.addEventListener('disco:calm', function (e) {
+        if (e.detail) root.setAttribute('data-calm', ''); else root.removeAttribute('data-calm');
+      });
+
+      // ---------- Give the ball's space back if it can't load ----------
+      var discoOk = false;
+      function dropSpace() { root.classList.remove('disco-space'); setTimeout(measure, 750); }
+      window.addEventListener('disco:ready', function () { discoOk = true; });
+      window.addEventListener('disco:failed', dropSpace);   // failed to load, or crashed later
+      setTimeout(function () { if (!discoOk) dropSpace(); }, 8000);   // the ball never arrived (script blocked)
+    })();
+  </script>
+
+  <!-- The whole effect, one line. The module injects its own styles and elements. -->
   <script type="module" src="./disco-ball.js"></script>
 </body>
 </html>
