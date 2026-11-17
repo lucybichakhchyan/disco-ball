@@ -723,7 +723,11 @@
     })();
   </script>
 
-  <!-- The whole effect, one line. The module injects its own styles and elements. -->
-  <script type="module" src="./disco-ball.js"></script>
+  <!-- The whole effect. The module injects its own styles and elements.
+       The ball's code is called disco-ball.js on GitHub and script.js on CodePen, so the page tries both. -->
+  <script type="module">
+    import('./disco-ball.js').catch(function () { return import('./script.js'); })
+      .catch(function () { window.dispatchEvent(new Event('disco:failed')); });
+  </script>
 </body>
 </html>
