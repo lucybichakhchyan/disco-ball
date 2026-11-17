@@ -8,7 +8,8 @@
 //  - drops in on its line once the page is ready (on the 'disco:cue' event, or after 2.5 s)
 //  - throws spots of light across the page that sweep as it turns
 //  - announces where the light falls ('disco:light' event) so the page can make words catch it
-//  - hover spins it faster; a click or tap gives it a push and a short spin
+//  - hover spins it faster; a click or tap gives it a push; dragging it spins it by hand, and a flick keeps it turning
+//  - in party mode it follows the music: the beams and the ball brighten with each kick, and the ball kicks round on the strong beat
 //  - pauses on the 'disco:pause' event (detail: true/false) and while the tab is hidden
 //  - waits for the page to load before fetching three.js, and removes itself if WebGL fails
 //  - stays still for visitors who ask for reduced motion
@@ -19,9 +20,9 @@ const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module
 // Colours: the ball's coloured reflections and the light spots it throws.
 // Lucy Bichakhchyan brand: violet range plus warm white.
 const PALETTE = {
-  panels: [0x8A2BE2, 0xAB8CF0, 0x9940E6, 0xBEADD6, 0x6E5A9A, 0xE9E7E1],
-  lights: [0x8A2BE2, 0xAB8CF0, 0x9940E6, 0xF6F6F4],
-  spots:  ['#FFFFFF', '#F6F6F4', '#CDB8FF', '#AB8CF0'],
+  panels: [0x8A2BE2, 0xBFA6F2, 0x9638E8, 0xDDD0F9, 0x6420AD, 0xF6F6F4],
+  lights: [0x8A2BE2, 0xBFA6F2, 0x9638E8, 0xF6F6F4],
+  spots:  ['#FFFFFF', '#F6F6F4', '#DDD0F9', '#BFA6F2'],
   // party mode (music on): full colour
   // party lights: a club palette built round the brand violet (magenta, violet, ultraviolet blue,
   // cyan and one warm white)
@@ -74,10 +75,12 @@ const PALETTE = {
       display: block;
       width: 100% !important; height: 100% !important;
       pointer-events: auto;          /* only the round ball takes the pointer... */
-      cursor: pointer;
+      cursor: grab;
+      touch-action: none;            /* a drag spins the ball rather than scrolling the page */
       clip-path: circle(var(--disco-hit, 32%) at 50% 50%);   /* ...not the square around it */
       -webkit-tap-highlight-color: transparent;
     }
+    #disco-floater canvas.is-held { cursor: grabbing; }
     #disco-spots {
       position: fixed; inset: 0;
       width: 100%; height: 100%;
@@ -477,7 +480,7 @@ const PALETTE = {
     PARTY_FIXTURES.forEach((f) => {
       if (f.ux === undefined) return;
       const ax = f.ax * W, ay = f.ay * H;
-      const strength = f.glow * 0.7 * partyMix * (1 + 0.5 * beatPulse);   // brighter on the claps
+      const strength = f.glow * 0.7 * partyMix * (0.7 + 0.95 * beatPulse);   // brighter with every kick the page hears
       // Where the beam meets the ball, the ball takes the light: the beam dims smoothly through
       // the ball and beyond it, rather than stopping on a line. How much it dims depends on how
       // squarely the beam is on the ball.
@@ -545,13 +548,41 @@ const PALETTE = {
     push(0.15, e.movementX > 0 ? -1 : 1);
   });
   el.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') targetSpeed = SPIN_IDLE; });
+  // A tap gives the ball a push. A drag turns it by hand, and letting go with a flick keeps it turning for a while.
+  let drag = null, momentum = 0;
   el.addEventListener('pointerdown', (e) => {
-    const r = el.getBoundingClientRect();
-    push(0.45, e.clientX < r.left + r.width / 2 ? -1 : 1);    // pushed away from where you touched
-    targetSpeed = SPIN_FAST;
-    clearTimeout(burstTimer);
-    burstTimer = setTimeout(() => { if (!el.matches(':hover')) targetSpeed = SPIN_IDLE; }, 1400);
+    el.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, startX: e.clientX, t: e.timeStamp, moved: 0, v: 0 };
+    el.classList.add('is-held');
+    momentum = 0;
   });
+  el.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dt = Math.max(1, e.timeStamp - drag.t) / 1000;
+    drag.x = e.clientX; drag.t = e.timeStamp; drag.moved += Math.abs(dx);
+    const turn = dx * (2.4 / size);                            // dragging across the ball turns it a little over a third of the way round
+    ball.rotation.y += turn;
+    drag.v = drag.v * 0.4 + (turn / dt) * 0.6;
+    lastActivity = performance.now();
+    if (!running) renderFrame();                               // reduced motion: it still turns under the hand
+  });
+  const release = (e) => {
+    if (!drag) return;
+    const r = el.getBoundingClientRect();
+    if (drag.moved < 5) {                                      // a tap: pushed away from where you touched
+      push(0.45, e.clientX < r.left + r.width / 2 ? -1 : 1);
+      targetSpeed = SPIN_FAST;
+      clearTimeout(burstTimer);
+      burstTimer = setTimeout(() => { if (!el.matches(':hover')) targetSpeed = SPIN_IDLE; }, 1400);
+    } else if (e.timeStamp - drag.t < 120) {                   // let go while still moving: a flick
+      momentum = Math.max(-9, Math.min(9, drag.v));
+      push(0.14, drag.v > 0 ? 1 : -1);
+    }
+    drag = null;
+    el.classList.remove('is-held');
+  };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
 
   // ---------- Frame ----------
   function ballCentre() {
@@ -578,11 +609,14 @@ const PALETTE = {
 
   // ---------- Party mode: the page sends 'disco:party' with on/off and a beat clock ----------
   let partyClock = null;                                      // function returning the music's beat (float)
-  let partyMix = 0, beatPulse = 0, partyBar = 0;
+  let partyLevel = null;                                      // function returning how hard the bass is hitting (0 to 1)
+  let partyMix = 0, beatPulse = 0, partyBar = 0, lastSpinBeat = -1;
   const partyColor = new THREE.Color();
   window.addEventListener('disco:party', (e) => {
     const d = e.detail || {};
     partyClock = d.on && typeof d.getBeat === 'function' ? d.getBeat : null;
+    partyLevel = d.on && typeof d.getLevel === 'function' ? d.getLevel : null;
+    lastSpinBeat = -1;
     lastActivity = performance.now();
     if (motionQuery.matches) {                                // reduced motion: colour on or off, no movement
       partyMix = partyClock ? 1 : 0; beatPulse = 0.5;
@@ -621,9 +655,17 @@ const PALETTE = {
     partyMix += ((partyClock ? 1 : 0) - partyMix) * Math.min(dt / 0.75, 1);
     if (partyClock) {
       const beat = partyClock();
-      // the beams brighten on the claps (beats 2 and 4) and settle in between
-      beatPulse = Math.floor(beat) % 2 === 1 ? Math.exp(-(beat % 1) * 5) : beatPulse * 0.85;
+      // the beams brighten with the bass the page hears, with a lift on the claps (beats 2 and 4)
+      const heard = partyLevel ? partyLevel() : 0;
+      const clap = Math.floor(beat) % 2 === 1 ? Math.exp(-(beat % 1) * 5) * 0.6 : 0;
+      beatPulse = Math.max(heard, clap, beatPulse - dt * 3.2);
       partyBar = Math.floor(beat / 4);
+      // the ball kicks round on every beat, and harder on the first beat of each bar
+      const beatIdx = Math.floor(beat);
+      if (beatIdx !== lastSpinBeat) {
+        lastSpinBeat = beatIdx;
+        if (beatIdx % 4 === 0) { spinSpeed += 1.1; push(0.07); } else spinSpeed += 0.3;
+      }
       lastActivity = now;                                     // a party never calms down
     } else {
       beatPulse *= 0.9;
@@ -641,7 +683,8 @@ const PALETTE = {
     }
     const baseSpin = partyClock ? Math.max(targetSpeed, SPIN_PARTY) : targetSpeed;
     spinSpeed += (baseSpin * (1 - 0.65 * calmMix) - spinSpeed) * Math.min(dt * 4, 1);
-    ball.rotation.y += spinSpeed * dt;
+    momentum *= Math.exp(-dt * 1.5);                         // a flick dies away over a couple of seconds
+    if (!drag) ball.rotation.y += (spinSpeed + momentum) * dt;   // held: the hand turns it, not the motor
     ball.rotation.x = Math.sin(now * 0.0002) * 0.12;
 
     const t = now * 0.0009;
@@ -658,7 +701,7 @@ const PALETTE = {
       const f = PARTY_FIXTURES[i % PARTY_FIXTURES.length];
       partyColor.set(f.color);
       light.color.copy(movingLights[i].calmColor).lerp(partyColor, partyMix);
-      light.intensity = 90 * (1 - partyMix) + partyMix * (20 + 420 * f.hit);
+      light.intensity = 90 * (1 - partyMix) + partyMix * (20 + 420 * f.hit) * (0.75 + 0.6 * beatPulse);
     });
 
     // settle when nobody has moved for a while: slower turn, softer sway, dimmer light
